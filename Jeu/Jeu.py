@@ -1471,7 +1471,16 @@ class Position(object):
     # retoune la position vers la direction #direction en tenant compte de l'offset
     #   Position(3,4).positionTowards(Direction.Right, 2) == Position(5,4)
     def positionTowards(self, direction, offset):
-        " a compléter "
+        if direction == Direction.Up:
+            return Position(self.x, self.y - offset)
+        elif direction == Direction.Down:
+            return Position(self.x, self.y + offset)
+        elif direction == Direction.Left:
+            return Position(self.x - offset, self.y)
+        elif direction == Direction.Right:
+            return Position(self.x + offset, self.y)
+        else:
+            return Position(self.x, self.y)
 
     # Retourne True si les coordonnées sont valides dans le wharehouse
     def isValidInWharehouse(self, wharehouse):
@@ -1484,6 +1493,7 @@ class Position(object):
         return Position(lx, ly)
 
 
+
 """
 WharehousePlan : Plan de l'entrepot pour stocker les éléments.
     Les éléments sont stockés dans une matrice (#rawMatrix)
@@ -1491,36 +1501,42 @@ WharehousePlan : Plan de l'entrepot pour stocker les éléments.
 
 
 class WharehousePlan(object):
+    """Plan de l'entrepôt pour le jeu Sokoban."""
+
     def __init__(self):
-        # la matrice d'éléments vide
+        # La matrice d'éléments vide
         self.rawMatrix = []
+        self.mover = None  # Stocke le joueur
 
     def appendRow(self, row):
-        # Ajoute une nouvelle ligne à la matrice
+        """Ajoute une nouvelle ligne à la matrice."""
         self.rawMatrix.append(row)
 
     def at(self, position):
-        # Retourne l'élément à la position donnée
-        if self.isPositionValid(position):
-            return self.rawMatrix[position.getY()][position.getX()]
-        return None
+        """Retourne l'élément à la position donnée."""
+        if not self.isPositionValid(position):
+            raise IndexError(f"Position invalide: {position}")
+        return self.rawMatrix[position.getY()][position.getX()]
 
     def atPut(self, position, elem):
-        # Place un élément à la position donnée
-        if self.isPositionValid(position):
-            self.rawMatrix[position.getY()][position.getX()] = elem
+        """Place un élément à la position donnée."""
+        if not self.isPositionValid(position):
+            raise IndexError(f"Position invalide: {position}")
+        self.rawMatrix[position.getY()][position.getX()] = elem
 
     def isPositionValid(self, position):
-        # Vérifie si une position est valide dans la matrice
-        if position.getY() < 0 or position.getX() < 0:
-            return False
-        if position.getY() >= len(self.rawMatrix):
-            return False
-        if position.getX() >= len(self.rawMatrix[position.getY()]):
-            return False
-        return True
+        """Vérifie si une position est valide dans la matrice."""
+        return (0 <= position.getY() < len(self.rawMatrix) and
+                0 <= position.getX() < len(self.rawMatrix[position.getY()]))
 
+    def setMover(self, mover):
+        """Définit le joueur."""
+        self.mover = mover
 
+    def getMover(self):
+        """Retourne le joueur."""
+        return self.mover
+        
 """
 Floor :
     Représente une case vide de la matrice
@@ -1577,7 +1593,7 @@ class Goal(object):
         return '.'
 
     def isFreePlace(self):
-        return False
+        return True
 
 
 """
@@ -1626,18 +1642,26 @@ Box : Caisse à déplacer par le déménageur.
 
 
 class Box(object):
-    def __init__(self, canvas, wharehouse, position, onGoal):
-        self.image = tk.PhotoImage(file='box.png')
+    def __init__(self, canvas, wharehouse, position, onGoal=False):
+        self.width = 64
+        self.height = 64
         self.canvas = canvas
-        self.canvas.create_image(position.getX() * 64 + 32, position.getY() * 64 + 32, image=self.image, tags="movable")
+        self.position = position
         self.wharehouse = wharehouse
         self.onGoal = onGoal
-
-    def getHeight(self):
-        return self.height
+        self.image = tk.PhotoImage(file='box.png')
+        self.imageId = self.canvas.create_image(
+            self.position.getX() * self.width + self.width / 2,
+            self.position.getY() * self.height + self.height / 2,
+            image=self.image,
+            tags="movable"
+        )
 
     def getWidth(self):
         return self.width
+
+    def getHeight(self):
+        return self.height
 
     def isMovable(self):
         return True
@@ -1645,22 +1669,46 @@ class Box(object):
     def canBeCovered(self):
         return False
 
-    # def moveTowards(self, direction):
+    def moveTowards(self, direction):
+        nextPos = self.position.positionTowards(direction, 1)
+        nextElement = self.wharehouse.at(nextPos)
+        if nextElement is None or not nextElement.canBeCovered():
+            return False
+
+        # Mise à jour de la matrice
+        self.wharehouse.atPut(self.position, Floor())
+        self.position = nextPos
+        self.wharehouse.atPut(self.position, self)
+
+        # Mise à jour de l'état onGoal
+        self.updateOnGoalStatus()
+
+        # Mise à jour de l'affichage
+        canvasPos = self.position.asCanvasPositionIn(self)
+        self.canvas.coords(
+            self.imageId,
+            canvasPos.getX() + self.width / 2,
+            canvasPos.getY() + self.height / 2
+        )
+        return True
+
+    def updateOnGoalStatus(self):
+        currentElement = self.wharehouse.at(self.position)
+        self.onGoal = isinstance(currentElement, Goal)
+        self.updateImage()
+
+    def updateImage(self):
+        if self.onGoal:
+            self.image = tk.PhotoImage(file='box_on_goal.png')
+        else:
+            self.image = tk.PhotoImage(file='box.png')
+        self.canvas.itemconfig(self.imageId, image=self.image)
 
     def xsbChar(self):
-        if self.under.isFreePlace():
-            return '$'
-        else:
-            return '*'
+        return '*' if self.onGoal else '$'
 
     def isFreePlace(self):
         return False
-
-    # def startGoalCoveredAnimation(self):
-
-    # def cleanUpAnimation(self):
-
-    # def goalCoveredAnimation(self):
 
 
 """
@@ -1676,73 +1724,95 @@ Mover : C'est  le déménageur.
 
 
 class Mover(object):
-    def __init__(self, canvas, wharehouse, position, onGoal):
-        self.image = tk.PhotoImage(file='player.png')
+    def __init__(self, canvas, wharehouse, position, onGoal=False):
         self.canvas = canvas
-        self.canvas.create_image(position.getX() * 64 + 32, position.getY() * 64 + 32, image=self.image, tags="movable")
         self.wharehouse = wharehouse
+        self.position = position
         self.onGoal = onGoal
-
-    def getHeight(self):
-        return self.height
+        self.width = 64
+        self.height = 64
+        self.image = tk.PhotoImage(file='player.png')
+        self.player = self.canvas.create_image(
+            self.position.getX() * self.width + self.width / 2,
+            self.position.getY() * self.height + self.height / 2,
+            image=self.image,
+            tags="movable"
+        )
 
     def getWidth(self):
         return self.width
 
-    def isMoveable(self):
+    def getHeight(self):
+        return self.height
+
+    def isMovable(self):
         return True
 
-    # def moveInCanvas(self, direction):
+    def canMove(self, direction):
+        nextPos = self.position.positionTowards(direction, 1)
+        if not self.wharehouse.isPositionValid(nextPos):
+            return False
+        nextElement = self.wharehouse.at(nextPos)
 
-    """
-        Retourne True si le Mover peut se déplacer dans la direction demandée.
-        Le calcul necessite de voir l'élément adjacent mais aussi l'élément suivant (offset de 2)
-    """
-    # def canMove(self, direction):
+        if isinstance(nextElement, (Floor, Goal)):
+            return True
+        elif isinstance(nextElement, Box):
+            boxNextPos = nextPos.positionTowards(direction, 1)
+            if not self.wharehouse.isPositionValid(boxNextPos):
+                return False
+            boxNextElement = self.wharehouse.at(boxNextPos)
+            if isinstance(boxNextElement, (Floor, Goal)):
+                return True
+        return False
 
-    """
-        Pour le déplacement, il faut penser à déplacer éventuellemnt le Box et ensuite déplacer le Mover
-    """
-    # def moveTowards(self, direction):
+    def moveTowards(self, direction):
+        if not self.canMove(direction):
+            return
 
-    """
-        Le Mover est représenté differemment suivant la direction de déplacement
-    """
-    # def setupImageForDirection(self, dir):
+        nextPos = self.position.positionTowards(direction, 1)
+        nextElement = self.wharehouse.at(nextPos)
 
-    """
-        Pour le déplacement :
-            - image changée en fonction de la direction
-            - si on ne peut pas se déplacer dans cette direction -> abandon
-            - sinon, bin le Mover est déplacé
-    """
+        if isinstance(nextElement, Box):
+            nextElement.moveTowards(direction)
+
+        # Mise à jour de la matrice
+        self.wharehouse.atPut(self.position, Floor())
+        self.position = nextPos
+        self.wharehouse.atPut(self.position, self)
+
+        # Mise à jour de l'affichage
+        canvasPos = self.position.asCanvasPositionIn(self)
+        self.canvas.coords(
+            self.player,
+            canvasPos.getX() + self.width / 2,
+            canvasPos.getY() + self.height / 2
+        )
+
+    def setupImageForDirection(self, direction):
+        if direction == Direction.Up:
+            self.image = tk.PhotoImage(file='playerUp.png')
+        elif direction == Direction.Down:
+            self.image = tk.PhotoImage(file='playerDown.png')
+        elif direction == Direction.Left:
+            self.image = tk.PhotoImage(file='playerLeft.png')
+        elif direction == Direction.Right:
+            self.image = tk.PhotoImage(file='playerRight.png')
+
+        self.canvas.itemconfig(self.player, image=self.image)
 
     def push(self, direction):
         self.setupImageForDirection(direction)
-        if not self.canMove(direction):
-            self.startImpossiblePushAnimation()
-            return
         self.moveTowards(direction)
 
     def xsbChar(self):
-        if self.under.isFreePlace():
-            return '@'
-        else:
-            return '+'
+        return '+' if self.onGoal else '@'
 
     def isFreePlace(self):
         return False
 
-    # def startImpossiblePushAnimation(self):
-
-    # def cleanUpAnimation(self):
-
-    # def impossiblePushAnimation(self):
-
 
 """
     Le jeux avec tout ce qu'il faut pour dessiner et stocker/gérer la matrice d'éléments
-
 """
 
 
@@ -1781,7 +1851,6 @@ class Level(object):
             for elemIdx in range(len(xsbMatrix[lineIdx])):
                 e = xsbMatrix[lineIdx][elemIdx]
                 pos = Position(x, y)
-
                 # Ajoute le bon élément à la bonne position
                 if e == '#':
                     # Ajout d'un mur
@@ -1791,6 +1860,7 @@ class Level(object):
                     # Ajout du déménageur
                     mover = Mover(self.canvas, self.wharehouse, pos, False)
                     row.append(mover)
+                    self.wharehouse.setMover(mover)
                 elif e == '$':
                     # Ajout d'une boite
                     box = Box(self.canvas, self.wharehouse, pos, False)
@@ -1810,26 +1880,18 @@ class Level(object):
         self.canvas.tag_raise("movable", "static")
 
     def keypressed(self, event):
-        x = self.playerX
-        y = self.playerY
-        moved = False
+        mover = self.wharehouse.getMover()
+        if mover is None:
+            return
+    
         if event.keysym == 'Up':
-            if (self.staticMatrix[self.playerY - 1][self.playerX] == None):
-                self.playerY = self.playerY - 1
-                moved = True
+            mover.push(Direction.Up)
         elif event.keysym == 'Down':
-            if (self.staticMatrix[self.playerY + 1][self.playerX] == None):
-                self.playerY = self.playerY + 1
-                moved = True
+            mover.push(Direction.Down)
         elif event.keysym == 'Left':
-            if (self.staticMatrix[self.playerY][self.playerX - 1] == None):
-                self.playerX = self.playerX - 1
-                moved = True
+            mover.push(Direction.Left)
         elif event.keysym == 'Right':
-            if (self.staticMatrix[self.playerY][self.playerX + 1] == None):
-                self.playerX = self.playerX + 1
-                moved = True
-        # Appeler la fonction de mouvement du joueur + modifier les vérifications
+            mover.push(Direction.Right)
 
 
 class Sokoban(object):
@@ -1842,7 +1904,7 @@ class Sokoban(object):
         self.root.resizable(False, False)
         self.root.title("Sokoban")
         print('Sokoban: ' + str(len(SokobanXSBLevels)) + ' levels')
-        self.level = Level(self.root, SokobanXSBLevels[45])
+        self.level = Level(self.root, SokobanXSBLevels[1])
         # self.level = Level(self.root, [
         # ['-','-','$','+','$','.','-','.','.','.','.','-','-','.','.','-','-','.','-'] ])
         # self.level = Level(self.root, [ ['@'] ])
