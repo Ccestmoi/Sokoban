@@ -142,7 +142,7 @@ Wall : pour délimiter les murs
 """
 class Wall(object):
     def __init__(self, canvas, position):
-
+        self =
     def getHeight(self):
         return self.height
     
