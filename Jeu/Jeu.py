@@ -11,6 +11,7 @@ Donc, vous pouvez ajouter/retirer des variables et/ou des fonctions et/ou des pa
 
 """
 from debugpy.common.timestamp import current
+from qtconsole.mainwindow import background
 
 try:  # import as appropriate for 2.x vs. 3.x
     import tkinter as tk
@@ -235,7 +236,10 @@ class Box(object):
         self.position = position
         self.wharehouse = wharehouse
         self.onGoal = onGoal
-        self.image = tk.PhotoImage(file='box.png')
+        if onGoal:
+            self.image= tk.PhotoImage(file='boxOnTarget.png')
+        else:
+            self.image = tk.PhotoImage(file='box.png')
         self.imageId = self.canvas.create_image(
             self.position.getX() * self.width + self.width / 2,
             self.position.getY() * self.height + self.height / 2,
@@ -365,6 +369,8 @@ class Mover(object):
         if not self.canMove(direction):
             return
 
+        self.wharehouse.score.player_deplacement += 1
+
         nextPos = self.position.positionTowards(direction, 1)
         nextElement = self.wharehouse.at(nextPos)
 
@@ -470,10 +476,10 @@ class Score(object):
 
         liste = []
         for d in tmp:
-            # créer un livre
+            # créer un score
             tmp_var = Score(d["player_name"], d["player_score"], d["player_deplacement"])
             # l'ajouter dans la liste
-            liste.append(tmp_var)
+            liste.append(tmp_var) #ajout dans liste
         history = Score()
         history.score = liste
         f.close()
@@ -483,10 +489,11 @@ class Score(object):
     Le jeux avec tout ce qu'il faut pour dessiner et stocker/gérer la matrice d'éléments
 """
 class Level(object):
-    def __init__(self, root, xsbMatrix):
+    def __init__(self, root, xsbMatrix, frame):
         self.root = root
         self.score = Score("User")
-        self.warehouse = WharehousePlan(self.score)  # Correction de l'orthographe
+        self.warehouse = WharehousePlan(self.score)
+        self.frame = frame
 
         # Définir la taille des tuiles
         self.tile_size = 64
@@ -512,7 +519,6 @@ class Level(object):
         self.score_text_id = self.canvas.create_text(10, 10, anchor='nw', 
                                                     text=f"Score : {self.score.getScore()}", 
                                                     font=("Arial", 16), fill="white")
-
         # Affichage du nombre de déplacements
         self.deplacements_text_id = self.canvas.create_text(10, 30, anchor='nw', 
                                                            text=f"Déplacements : {self.score.player_deplacement}", 
@@ -584,7 +590,6 @@ class Level(object):
             direction = Direction.Right
 
         if direction is not None:
-            self.score.player_deplacement += 1
             mover.push(direction)
             self.update_score_display()
             self.checkWinCondition()
@@ -601,11 +606,57 @@ class Level(object):
             for element in row:
                 if isinstance(element, Box) and not element.onGoal:
                     return  # Au moins une caisse n'est pas sur un objectif
-        print("Félicitations ! Vous avez gagné !")
+
+        self.fin = self.canvas.create_text(10, 60, anchor='nw',
+                                            text="Félicitations vous avez gagné",
+                                            font=("Arial", 20), fill="pink")
         self.root.unbind("<Key>")  # Désactive les entrées clavier
         self.score.toFile("jeu.json")
+        self.frame.destroy()
+
+        # Création d'un nouveau cadre pour le menu
+        nouveau_frame = tk.Frame(self.root)
+        nouveau_frame.pack(padx=10, pady=10)
+
+        # Bouton pour retourner au menu principal
+        bouton_retour = tk.Button(
+            nouveau_frame,
+            text="Retour au menu",
+            fg="blue",
+            command=lambda: self.retour_menu(nouveau_frame)
+        )
+        bouton_retour.pack()
+
+    def retour_menu(self, frame):
+        self.canvas.destroy()
+        frame.destroy()
+        Start_Menu(self.root, tk.Frame(self.root)).frame.pack(padx=10, pady=10)
 
 
+class Start_Menu(object):
+    def __init__(self, root, frame):
+        self.root = root
+        self.level = None
+        self.frame = frame
+        self.create_level_buttons()
+
+    def create_level_buttons(self):
+        cols = 5  # Nombre de colonnes dans la grille
+        for index in range(len(SokobanXSBLevels)):
+            row = index // cols
+            col = index % cols
+            bouton = tk.Button(
+                self.frame,
+                text=f"Niveau {index + 1}",
+                fg = "black",
+                command=lambda lvl=index: self.start_level(lvl)
+            )
+            bouton.grid(row=row, column=col, padx=5, pady=5)
+
+    def start_level(self, niveau):
+        self.level = Level(self.root, SokobanXSBLevels[niveau], self.frame)
+        self.frame.destroy() 
+    
 class Sokoban(object):
     '''
     Main Level class
@@ -615,11 +666,12 @@ class Sokoban(object):
         self.root = tk.Tk()
         self.root.resizable(False, False)
         self.root.title("Sokoban")
-        print('Sokoban: ' + str(len(SokobanXSBLevels)) + ' levels')
-        self.level = Level(self.root, SokobanXSBLevels[2])
+        self.frame = tk.Frame(self.root)
+        self.frame.pack(padx=10, pady=10)
+        print('Sokoban: ' + str(len(SokobanXSBLevels)) + 'levels')
+        self.level = Start_Menu(self.root, self.frame)
 
     def play(self):
         self.root.mainloop()
 
 Sokoban().play()
-
